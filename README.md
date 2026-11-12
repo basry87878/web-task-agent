@@ -1,6 +1,6 @@
 # 🌐 Web-to-Task AI Agent
 
-<img width="1897" height="853" alt="image" src="https://github.com/user-attachments/assets/56426783-46dc-4ed2-9c9e-c96bac12231f" />
+<img width="1877" height="833" alt="image" src="https://github.com/user-attachments/assets/dc8812e6-7bbd-4b5d-a551-40b738dc993a" />
 
 
 A custom, production-ready autonomous AI agent built with **LangGraph**, **LangChain**, and **Streamlit**. Designed to bridge live web research and actionable productivity, this agent surfs the web via DuckDuckGo, extracts live URLs, logs actionable checklists into local text files, and exports structured research findings directly into downloadable Excel (`.xlsx`) spreadsheets.
