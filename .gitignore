@@ -6,3 +6,4 @@ __pycache__/
 .claude/
 *.xlsx
 my_tasks.txt
+list_models.py
