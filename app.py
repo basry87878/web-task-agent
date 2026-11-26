@@ -186,25 +186,12 @@ st.markdown(
     .preset-title { font-size: 1.05rem; font-weight: 700; margin: 0.1rem 0 0.35rem 0; }
     .preset-desc { font-size: 0.88rem; opacity: 0.82; margin: 0; min-height: 2.6rem; }
 
-    .sidebar-contact {
-        border: 1px solid rgba(128, 128, 128, 0.22);
-        border-radius: 10px;
-        padding: 0.75rem 0.85rem;
-        background: rgba(128, 128, 128, 0.04);
-        font-size: 0.85rem;
-        line-height: 1.5;
-        margin-bottom: 0.75rem;
-    }
-    .sidebar-contact-title {
-        font-weight: 700;
-        margin-bottom: 0.25rem;
-    }
-    .sidebar-contact a, .cta-callout a, .custom-footer a {
+    .cta-callout a, .custom-footer a {
         color: #2563eb;
         text-decoration: none;
         font-weight: 500;
     }
-    .sidebar-contact a:hover, .cta-callout a:hover, .custom-footer a:hover {
+    .cta-callout a:hover, .custom-footer a:hover {
         text-decoration: underline;
     }
 
@@ -645,7 +632,7 @@ def _apply_suggested_prompt(prompt_text: str) -> None:
     st.session_state["coach_open"] = False
 
 
-# Sidebar: session-only history, contact block, and collapsed stack info
+# Sidebar: session-only history and collapsed stack info
 with st.sidebar:
     st.header("Recent Exports")
     if st.session_state["history"]:
@@ -662,18 +649,6 @@ with st.sidebar:
         st.info("Run a preset or custom prompt to generate a source-verified Excel report.")
 
     st.divider()
-    st.markdown(
-        f"""
-        <div class="sidebar-contact">
-            <div class="sidebar-contact-title">Built by Abdelrahman Basry</div>
-            <a href="{LINKEDIN_URL}" target="_blank" rel="noopener noreferrer">LinkedIn</a>
-            &nbsp;·&nbsp;
-            <a href="mailto:{CONTACT_EMAIL}">Email</a>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     with st.expander("Under the Hood", expanded=False):
         engine_chain = " → ".join(
             _format_model_display(m)
