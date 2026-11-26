@@ -36,6 +36,21 @@ def get_groq_api_key() -> str | None:
     return _get_secret("GROQ_API_KEY")
 
 
+def get_openrouter_api_key() -> str | None:
+    """Return OPENROUTER_API_KEY (isolated free key for Prompt Coach assistant)."""
+    return _get_secret("OPENROUTER_API_KEY")
+
+
+def get_ga_measurement_id() -> str | None:
+    """Return optional Google Analytics 4 Measurement ID (e.g., G-XXXXXXXXXX)."""
+    return _get_secret("GA_MEASUREMENT_ID")
+
+
+def get_ga_api_secret() -> str | None:
+    """Return optional Google Analytics 4 Measurement Protocol API secret."""
+    return _get_secret("GA_API_SECRET")
+
+
 # Cloud-only cross-provider fallback chain:
 #   gemini-4-hydrogen (1 fast attempt) -> gemini-3.5-flash-lite (1 fast attempt)
 #   -> Groq qwen/qwen3.8-27b -> Groq openai/gpt-oss-120b
@@ -75,8 +90,16 @@ MODEL_RETRY_MIN_DELAY_SECONDS = float(_get_secret("MODEL_RETRY_MIN_DELAY_SECONDS
 MODEL_RETRY_MAX_DELAY_SECONDS = float(_get_secret("MODEL_RETRY_MAX_DELAY_SECONDS", "2.5") or "2.5")
 TAVILY_TIMEOUT_SECONDS = float(_get_secret("TAVILY_TIMEOUT_SECONDS", "15") or "15")
 
+# Isolated Prompt Coach assistant settings (OpenRouter free tier only)
+OPENROUTER_MODEL = _get_secret("OPENROUTER_MODEL", "openrouter/free") or "openrouter/free"
+OPENROUTER_TIMEOUT_SECONDS = float(_get_secret("OPENROUTER_TIMEOUT_SECONDS", "20") or "20")
+MAX_COACH_MESSAGES_PER_SESSION = int(_get_secret("MAX_COACH_MESSAGES_PER_SESSION", "10") or "10")
+
 # Guardrails & app metadata
-MAX_CUSTOM_RUNS_PER_SESSION = int(_get_secret("MAX_CUSTOM_RUNS_PER_SESSION", "3") or "3")
+MAX_CUSTOM_RUNS_PER_SESSION = int(_get_secret("MAX_CUSTOM_RUNS_PER_SESSION", "15") or "15")
+RUN_COOLDOWN_SECONDS = float(_get_secret("RUN_COOLDOWN_SECONDS", "10") or "10")
+MAX_RESEARCH_PROMPT_CHARS = int(_get_secret("MAX_RESEARCH_PROMPT_CHARS", "500") or "500")
+MAX_COACH_MESSAGE_CHARS = int(_get_secret("MAX_COACH_MESSAGE_CHARS", "400") or "400")
 MAX_SEARCH_CALLS = int(_get_secret("MAX_SEARCH_CALLS", "3") or "3")
 MAX_EXTRACT_CALLS = int(_get_secret("MAX_EXTRACT_CALLS", "2") or "2")
 MAX_EXTRACT_URLS = 4

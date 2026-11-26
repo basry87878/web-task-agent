@@ -7,7 +7,30 @@ from urllib.parse import urlparse
 import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
+
+_SAFE_URL_SCHEMES = ("http", "https")
+_EXCEL_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def is_safe_http_url(url: str) -> bool:
+    """Return True only when URL uses an explicit http:// or https:// scheme with a host."""
+    if not isinstance(url, str):
+        return False
+    parsed = urlparse(url.strip())
+    return parsed.scheme.lower() in _SAFE_URL_SCHEMES and bool(parsed.netloc)
+
+
+def sanitize_excel_cell(value: object) -> object:
+    """Neutralize Excel formula injection on string cells starting with =, +, -, @, tab, or CR."""
+    if not isinstance(value, str) or not value:
+        return value
+    stripped_leading_spaces = value.lstrip(" ")
+    if value[0] in _EXCEL_FORMULA_PREFIXES or (
+        stripped_leading_spaces and stripped_leading_spaces[0] in _EXCEL_FORMULA_PREFIXES
+    ):
+        return "'" + value
+    return value
 
 
 class ResearchItem(BaseModel):
@@ -55,8 +78,16 @@ class ResearchItem(BaseModel):
     )
     source_url: HttpUrl = Field(
         ...,
-        description="Exact verified URL returned by Tavily search or extract during this run.",
+        description="Exact verified http:// or https:// URL returned by Tavily search or extract during this run.",
     )
+
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def _enforce_http_scheme(cls, value: object) -> object:
+        raw = str(value).strip() if value is not None else ""
+        if not is_safe_http_url(raw):
+            raise ValueError("source_url must use an http:// or https:// scheme with a valid host.")
+        return raw
 
 
 class ResearchReport(BaseModel):
@@ -114,13 +145,16 @@ def verify_report_sources(
 
     for item in report.items:
         raw_url = str(item.source_url)
+        if not is_safe_http_url(raw_url):
+            unverified_count += 1
+            continue
         norm = normalize_url(raw_url)
-        if norm in verified_url_map:
+        if norm in verified_url_map and is_safe_http_url(verified_url_map[norm]):
             canonical = verified_url_map[norm]
             verified_items.append(item.model_copy(update={"source_url": canonical}))
         else:
             host = urlparse(raw_url).netloc.lower().removeprefix("www.")
-            if host in domain_fallback:
+            if host in domain_fallback and is_safe_http_url(domain_fallback[host]):
                 verified_items.append(item.model_copy(update={"source_url": domain_fallback[host]}))
             else:
                 unverified_count += 1
@@ -156,12 +190,15 @@ def make_safe_filename(title: str) -> str:
 
 
 def export_report_to_excel_bytes(report: ResearchReport) -> bytes:
-    """Generate a polished, multi-user-safe .xlsx file in memory (zero disk writes)."""
+    """Generate a polished, multi-user-safe .xlsx file in memory (zero disk writes, formula-safe)."""
     df = report_to_dataframe(report)
+    safe_df = df.copy()
+    for col in safe_df.columns:
+        safe_df[col] = safe_df[col].map(sanitize_excel_cell)
     buffer = io.BytesIO()
 
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Research")
+        safe_df.to_excel(writer, index=False, sheet_name="Research")
         ws = writer.sheets["Research"]
 
         header_fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
@@ -172,7 +209,7 @@ def export_report_to_excel_bytes(report: ResearchReport) -> bytes:
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
 
-        for col_idx in range(1, len(df.columns) + 1):
+        for col_idx in range(1, len(safe_df.columns) + 1):
             cell = ws.cell(row=1, column=col_idx)
             cell.fill = header_fill
             cell.font = header_font
@@ -180,12 +217,12 @@ def export_report_to_excel_bytes(report: ResearchReport) -> bytes:
 
         ws.row_dimensions[1].height = 26
 
-        url_col_idx = df.columns.get_loc("Source URL") + 1
-        for row_idx in range(2, len(df) + 2):
-            for col_idx in range(1, len(df.columns) + 1):
+        url_col_idx = safe_df.columns.get_loc("Source URL") + 1
+        for row_idx in range(2, len(safe_df) + 2):
+            for col_idx in range(1, len(safe_df.columns) + 1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-                if col_idx == url_col_idx and isinstance(cell.value, str) and cell.value.startswith("http"):
+                if col_idx == url_col_idx and isinstance(cell.value, str) and is_safe_http_url(cell.value):
                     cell.hyperlink = cell.value
                     cell.font = link_font
                 else:
@@ -200,15 +237,15 @@ def export_report_to_excel_bytes(report: ResearchReport) -> bytes:
             "Notes": 38,
             "Source URL": 40,
         }
-        for col_idx, col_name in enumerate(df.columns, start=1):
+        for col_idx, col_name in enumerate(safe_df.columns, start=1):
             col_letter = get_column_letter(col_idx)
             ws.column_dimensions[col_letter].width = col_widths.get(col_name, 24)
 
-        # Add a concise Summary sheet
+        # Add a concise Summary sheet (also sanitized against Excel formula injection)
         summary_df = pd.DataFrame(
             [
-                {"Field": "Report Title", "Value": report.title},
-                {"Field": "Executive Summary", "Value": report.executive_summary},
+                {"Field": "Report Title", "Value": sanitize_excel_cell(report.title)},
+                {"Field": "Executive Summary", "Value": sanitize_excel_cell(report.executive_summary)},
                 {"Field": "Total Verified Rows", "Value": len(report.items)},
             ]
         )

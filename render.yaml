@@ -14,11 +14,17 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GA_MEASUREMENT_ID
+        sync: false
+      - key: GA_API_SECRET
+        sync: false
       - key: GEMINI_PRIMARY_MODEL
         value: "gemini-4-hydrogen"
       - key: GEMINI_FALLBACK_MODEL
         value: "gemini-3.5-flash-lite"
       - key: GROQ_FALLBACK_MODEL
-        value: "openai/gpt-oss-120b"
+        value: "qwen/qwen3.8-27b"
       - key: MAX_CUSTOM_RUNS_PER_SESSION
-        value: "3"
+        value: "15"
