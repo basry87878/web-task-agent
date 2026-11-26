@@ -1,0 +1,57 @@
+====================================================================
+🌐 WEB-TO-TASK AI AGENT — QUICK START & LAUNCH GUIDE
+====================================================================
+
+
+
+
+--------------------------------------------------------------------
+OPTION 1: CREATE A ONE-CLICK WINDOWS LAUNCHER (run_app.bat)
+--------------------------------------------------------------------
+excute anytime to start the server and open
+   http://localhost:8501 in your browser automatically.
+   
+   
+--------------------------------------------------------------------
+OPTION 2: RUN FROM VS CODE TERMINAL
+--------------------------------------------------------------------
+1. Open the project folder in VS Code.
+2. Open the PowerShell terminal (Ctrl + `).
+3. Run this single command (do NOT use the VS Code "Play" button):
+
+   .venv\Scripts\python.exe -m streamlit run app.py
+
+* Why this command? It explicitly calls the Python interpreter inside
+  your .venv folder, bypassing Windows PowerShell ExecutionPolicy blocks
+  and preventing Streamlit from falling back to global Python.
+* Local URL: http://localhost:8501
+* To stop the server: Click inside the terminal and press Ctrl + C.
+
+
+--------------------------------------------------------------------
+--------------------------------------------------------------------
+OPTION 3: RUN IN TERMINAL-ONLY MODE (NO WEB UI)
+--------------------------------------------------------------------
+If you only want to chat with the agent inside the terminal:
+
+   .venv\Scripts\python.exe agent.py
+
+
+--------------------------------------------------------------------
+TROUBLESHOOTING & MAINTENANCE
+--------------------------------------------------------------------
+1. "ModuleNotFoundError: No module named '...'"
+   Always install packages directly into .venv using:
+   .venv\Scripts\python.exe -m pip install streamlit pandas openpyxl langchain-google-genai langchain-ollama langchain-community langgraph ddgs python-dotenv
+
+2. Port 8501 is stuck on an old error screen:
+   Close old background Streamlit processes by running:
+   taskkill /F /IM streamlit.exe
+   Then re-run:
+   .venv\Scripts\python.exe -m streamlit run app.py
+
+3. Local Fallback Models (Ollama):
+   If your Google AI Studio API quota (429 error) runs out, the agent
+   automatically falls back to your local Ollama models (qwen3:14b and
+   phi4-mini). Make sure the Ollama app is running in the background if
+   you want local fallback active.

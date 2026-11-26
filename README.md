@@ -1,34 +1,66 @@
-# 🌐 Web-to-Task AI Agent
+# 📊 AI Market Research & Excel Builder
 
-<img width="1877" height="833" alt="image" src="https://github.com/user-attachments/assets/dc8812e6-7bbd-4b5d-a551-40b738dc993a" />
+A lean, zero-billing, cloud-deployable AI research web app built with **Streamlit**, **LangGraph**, **Google Gemini**, **Tavily**, and **Pydantic**.
 
-
-A custom, production-ready autonomous AI agent built with **LangGraph**, **LangChain**, and **Streamlit**. Designed to bridge live web research and actionable productivity, this agent surfs the web via DuckDuckGo, extracts live URLs, logs actionable checklists into local text files, and exports structured research findings directly into downloadable Excel (`.xlsx`) spreadsheets.
-
-To ensure high availability and zero downtime during API rate limits, the system uses a **multi-model fallback architecture**—dynamically routing queries through Google Gemini cloud tiers and failing over automatically to local offline LLMs via **Ollama**.
+Turn any B2B research brief into a **source-verified, spreadsheet-ready `.xlsx` report** with clickable source links—no local Ollama models, no shared-disk state, and zero malformed rows.
 
 ---
 
 ## ✨ Key Features
 
-* **Autonomous Web Research:** Searches the live web using a locked DuckDuckGo backend (`DuckDuckGoSearchAPIWrapper`) to retrieve titles, detailed snippets, and source URLs.
-* **Multi-Model Fallback Pipeline:** Automatically cascades through four model tiers if an API quota or timeout occurs:
-  1. `gemini-flash-lite-latest` (Cloud Primary)
-  2. `gemini-2.5-flash` (Cloud Fallback)
-  3. `qwen3:14b` (Local Ollama Fallback)
-  4. `phi4-mini` (Local Lightweight Ollama Fallback)
-* **Automated Task Logging:** Converts research into structured to-do items saved locally in `my_tasks.txt`, complete with a live sidebar checklist and one-click clearing in the UI.
-* **Excel Data Export:** Compiles structured research tables (such as professional profiles, news summaries, or job listings with links) into `.xlsx` files using `pandas` and `openpyxl`, ready for instant download from the Streamlit sidebar.
-* **Persistent Conversation Memory:** Maintains full multi-turn context across the session so follow-up commands (e.g., *"Export those findings to Excel"*) seamlessly reference earlier searches.
+* **Cloud-Only Gemini Free-Tier Fallback Chain:** Routes requests through `gemini-4-hydrogen` (primary) and falls back automatically to `gemini-3.5-flash-lite` on rate limits or transient errors.
+* **Tavily Search + Extract:** Uses Tavily Search for live web discovery and Tavily Extract for full-page pricing tables, specs, and vendor details.
+* **Strict Pydantic Structured Outputs:** Every run validates rows through `ResearchReport` / `ResearchItem` schemas and verifies every `source_url` against URLs actually returned by Tavily in that run.
+* **In-Memory `.xlsx` Exports:** Generates formatted Excel spreadsheets (`Research` + `Summary` tabs, styled headers, clickable hyperlinks) in memory via `io.BytesIO`—multi-user safe with zero disk writes.
+* **Polished Demo UI & Guardrails:**
+  * 3 clickable business presets (**B2B Lead List**, **Competitor Pricing Matrix**, **Vendor Shortlist**) cached for 1 hour to protect free quotas.
+  * Custom research brief input capped at **3 custom runs per session**.
+  * Inline interactive preview table (`st.dataframe` with clickable source links) shown directly above the `.xlsx` download button.
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠️ Local Setup
 
-* **Orchestration & Agents:** LangGraph, LangChain (`langchain-core`, `langchain-community`)
-* **LLM Providers:** Google Gemini API (`langchain-google-genai`), Ollama (`langchain-ollama`)
-* **Frontend UI:** Streamlit
-* **Tools & Data Processing:** DuckDuckGo Search (`ddgs`), Pandas, OpenPyXL, Python-Dotenv
+1. Clone the repo and create a virtual environment:
+   ```bash
+   python -m venv .venv
+   # Windows:
+   .venv\Scripts\activate
+   # macOS/Linux:
+   source .venv/bin/activate
+   ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Copy `.env.example` to `.env` and add your keys:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   TAVILY_API_KEY=your_tavily_api_key_here
+   ```
+4. Launch the app:
+   ```bash
+   streamlit run app.py
+   ```
+
+---
+
+## 🚀 Free Deployment on Render (`https://jobtruth.top/`)
+
+This repository includes a ready-to-use [`render.yaml`](render.yaml) blueprint for Render's **Free** Python Web Service tier:
+
+1. Push this repo to GitHub (make sure `.env` is **not** committed—it is listed in `.gitignore`).
+2. In the [Render Dashboard](https://dashboard.render.com/), click **New + → Blueprint** (or **Web Service**) and connect your GitHub repository.
+3. Under **Environment Variables**, add:
+   * `GEMINI_API_KEY`
+   * `TAVILY_API_KEY`
+4. Deploy! Render runs:
+   ```bash
+   streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+   ```
+5. **Connect Custom Domain (`jobtruth.top`):**
+   * In your Render service → **Settings → Custom Domains**, add `jobtruth.top` (and `www.jobtruth.top` if desired).
+   * Add the `A` / `ALIAS` and `CNAME` records Render provides at your DNS provider. Render provisions a free TLS certificate automatically.
 
 ---
 
@@ -36,9 +68,13 @@ To ensure high availability and zero downtime during API rate limits, the system
 
 ```text
 web-task-agent/
-├── agent.py              # Core LangGraph ReAct agent, tools, and multi-model fallback array
-├── app.py                # Streamlit web interface, session memory, and sidebar managers
-├── run_app.bat           # One-click Windows batch launcher
-├── requirements.txt      # Project Python dependencies
-├── .env.example          # Template for environment variables
-└── .gitignore            # Excludes .env, .venv, and local output files
+├── app.py                  # Streamlit UI, 3 business presets, session rate limit, inline preview & download
+├── agent.py                # Cloud-only Gemini fallback + Tavily Search/Extract + 2-stage LangGraph pipeline
+├── schemas.py              # Strict Pydantic v2 schemas, URL verification, and in-memory .xlsx exporter
+├── config.py               # Centralized env/secrets loading and guardrail settings
+├── render.yaml             # Render free-tier Python web service blueprint
+├── .streamlit/config.toml  # Headless server & clean UI theme config
+├── requirements.txt        # Lean cloud-only Python dependencies
+├── .env.example            # Template for GEMINI_API_KEY and TAVILY_API_KEY
+└── .gitignore              # Excludes .env, .venv, *.xlsx, and local artifacts
+```

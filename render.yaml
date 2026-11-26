@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: jobtruth-research-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.11"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: GEMINI_PRIMARY_MODEL
+        value: "gemini-4-hydrogen"
+      - key: GEMINI_FALLBACK_MODEL
+        value: "gemini-3.5-flash-lite"
+      - key: GROQ_FALLBACK_MODEL
+        value: "openai/gpt-oss-120b"
+      - key: MAX_CUSTOM_RUNS_PER_SESSION
+        value: "3"
