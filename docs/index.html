@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JobTruth — AI Market Research &amp; Excel Builder</title>
+  <meta
+    name="description"
+    content="Turn any B2B research brief into a source-verified, spreadsheet-ready .xlsx or .csv report in ~15 seconds using live web search and structured AI."
+  />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Optional Google Analytics 4: paste your G-XXXXXXXXXX ID below or let the backend supply GA_MEASUREMENT_ID -->
+  <script>
+    window.JOBTRUTH_GA_ID = "";
+    window.initJobTruthGA = function (measurementId) {
+      var mid = (measurementId || window.JOBTRUTH_GA_ID || "").trim();
+      if (!mid || document.getElementById("ga4-gtag-script")) return;
+      var s = document.createElement("script");
+      s.id = "ga4-gtag-script";
+      s.async = true;
+      s.src = "https://www.googletagmanager.com/gtag/js?id=" + encodeURIComponent(mid);
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () { window.dataLayer.push(arguments); };
+      window.gtag("js", new Date());
+      window.gtag("config", mid);
+    };
+    if (window.JOBTRUTH_GA_ID) window.initJobTruthGA(window.JOBTRUTH_GA_ID);
+  </script>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Left Sidebar -->
+    <aside class="sidebar" aria-label="Session history and engine details">
+      <div class="sidebar-brand">
+        <span class="brand-mark">📊</span>
+        <div>
+          <div class="brand-name">JobTruth</div>
+          <div class="brand-tag">B2B Research Agent</div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h2 class="sidebar-heading">Recent Exports</h2>
+        <div id="history-list" class="history-list">
+          <div class="history-empty">
+            Run a preset or custom brief to generate a source-verified Excel report.
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <details class="under-the-hood">
+        <summary>Under the Hood</summary>
+        <div class="hood-body">
+          <p><strong>Engine:</strong> Gemini 4 Hydrogen → Gemini 3.5 Flash-Lite → Qwen 3.8 27B (Groq) → GPT-OSS 120B (Groq)</p>
+          <p><strong>Search:</strong> Tavily Search + Extract</p>
+          <p><strong>Export:</strong> Strict Pydantic → In-memory <code>.xlsx</code> / <code>.csv</code></p>
+        </div>
+      </details>
+
+      <div id="api-status-pill" class="api-status-pill" aria-live="polite">
+        <span class="status-dot warming"></span>
+        <span id="api-status-text">Connecting to research engine…</span>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+      <header class="hero">
+        <div class="eyebrow-pill">
+          <span class="eyebrow-dot"></span>
+          LIVE AI AGENT · ~15s PER REPORT · VERIFIED SOURCES
+        </div>
+        <h1>📊 AI Market Research &amp; Excel Builder</h1>
+        <p class="hero-subtitle">
+          Turn any B2B research brief into a <strong>source-verified, spreadsheet-ready <code>.xlsx</code> report</strong>
+          using live Tavily search/extraction and structured AI outputs.
+        </p>
+      </header>
+
+      <!-- Section 1: 3 Business Presets -->
+      <section class="section" aria-labelledby="presets-heading">
+        <h2 id="presets-heading" class="section-title">1. Try a Business Preset</h2>
+        <div id="presets-grid" class="presets-grid"></div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- Section 2: Custom Research Brief -->
+      <section class="section" aria-labelledby="custom-heading">
+        <h2 id="custom-heading" class="section-title">2. Or Run a Custom Research Brief</h2>
+
+        <div id="prompt-applied-banner" class="banner banner-success hidden" role="status"></div>
+
+        <form id="custom-form" class="custom-card" novalidate>
+          <div class="form-label-row">
+            <label for="custom-prompt" class="form-label">Describe what you want researched</label>
+            <span id="char-counter" class="char-counter">0 / 500</span>
+          </div>
+          <textarea
+            id="custom-prompt"
+            class="prompt-textarea"
+            maxlength="500"
+            rows="4"
+            placeholder="e.g., Compare pricing and key features of 5 European payroll API providers for startups in 2026, including their official pricing page URLs."
+          ></textarea>
+          <div class="form-actions">
+            <button id="run-custom-btn" type="submit" class="btn btn-primary">
+              Run Custom Research
+            </button>
+            <span id="runs-badge" class="runs-badge"></span>
+          </div>
+        </form>
+
+        <div id="status-banner" class="banner banner-info hidden" role="status" aria-live="polite">
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="status-banner-text">Running live Tavily research &amp; structuring report…</span>
+        </div>
+
+        <div id="error-banner" class="banner banner-error hidden" role="alert"></div>
+      </section>
+
+      <!-- Section 3: Results Table + Export Buttons -->
+      <section id="results-section" class="section results-section hidden" aria-live="polite">
+        <hr class="section-divider" />
+
+        <div class="results-header">
+          <h2 id="report-title" class="report-title"></h2>
+          <p id="report-summary" class="report-summary"></p>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-label">Structured Rows</div>
+            <div id="metric-rows" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Verified Tavily URLs</div>
+            <div id="metric-urls" class="metric-value">—</div>
+          </div>
+          <div class="metric-card metric-card-wide">
+            <div class="metric-label">Model Used</div>
+            <div id="metric-model" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Run Time</div>
+            <div id="metric-time" class="metric-value">—</div>
+          </div>
+        </div>
+
+        <div id="guardrail-note" class="guardrail-note hidden"></div>
+        <div id="flagged-banner" class="banner banner-warning hidden"></div>
+
+        <div class="table-wrap">
+          <table class="results-table">
+            <thead id="results-thead"></thead>
+            <tbody id="results-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="export-row">
+          <button id="download-xlsx-btn" type="button" class="btn btn-primary btn-export-primary">
+            ⬇️ Download Excel Report (.xlsx)
+          </button>
+          <button id="download-csv-btn" type="button" class="btn btn-secondary btn-export-secondary">
+            📄 Download CSV
+          </button>
+        </div>
+
+        <div class="cta-callout">
+          Want a custom version connected to your CRM, Power BI, or internal data?
+          <a href="https://www.linkedin.com/in/abdelrahmanbasry/" target="_blank" rel="noopener noreferrer">Connect on LinkedIn</a>
+          or email
+          <a href="mailto:a.basry404@gmail.com">a.basry404@gmail.com</a>.
+        </div>
+      </section>
+
+      <!-- Clean Centered Footer -->
+      <footer class="custom-footer">
+        © 2026 Basry. All rights reserved. ·
+        <a href="https://www.linkedin.com/in/abdelrahmanbasry/" target="_blank" rel="noopener noreferrer">Built by Basry</a> ·
+        <a href="mailto:a.basry404@gmail.com">Email</a>
+      </footer>
+    </main>
+  </div>
+
+  <script src="app.js" defer></script>
+  <script src="coach-widget.js" defer></script>
+</body>
+</html>
