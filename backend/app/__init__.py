@@ -1,0 +1,1 @@
+"""JobTruth FastAPI backend package."""
