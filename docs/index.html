@@ -107,11 +107,44 @@
             rows="4"
             placeholder="e.g., Compare pricing and key features of 5 European payroll API providers for startups in 2026, including their official pricing page URLs."
           ></textarea>
+
+          <!-- Compact Deep Research Controls (smoothly revealed only when Deep Research is ON) -->
+          <div id="deep-controls" class="deep-controls hidden" aria-hidden="true">
+            <div class="deep-controls-row">
+              <span class="deep-controls-label">Target volume:</span>
+              <div id="deep-target-pills" class="target-pills" role="radiogroup" aria-label="Target row volume">
+                <button type="button" class="target-pill active" data-target="100" aria-checked="true">100 rows</button>
+                <button type="button" class="target-pill" data-target="250" aria-checked="false">250 rows</button>
+                <button type="button" class="target-pill" data-target="500" aria-checked="false">500 rows</button>
+                <button type="button" class="target-pill" data-target="1000" aria-checked="false">1,000 rows</button>
+                <button type="button" class="target-pill" data-target="0" aria-checked="false">Continuous (until stopped)</button>
+              </div>
+            </div>
+            <p class="deep-controls-hint">
+              Runs continuously across multiple search engines in waves. You can stop and export partial results anytime.
+            </p>
+          </div>
+
           <div class="form-actions">
-            <button id="run-custom-btn" type="submit" class="btn btn-primary">
-              Run Custom Research
+            <div class="form-actions-left">
+              <button id="run-custom-btn" type="submit" class="btn btn-primary">
+                Run Custom Research
+              </button>
+              <span id="runs-badge" class="runs-badge"></span>
+            </div>
+            <button
+              id="deep-mode-toggle"
+              type="button"
+              class="deep-toggle-btn"
+              aria-pressed="false"
+              title="Toggle multi-engine Deep Research mode for 100–1,000+ rows"
+            >
+              <svg class="deep-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"></path>
+                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"></path>
+              </svg>
+              <span>Deep Research</span>
             </button>
-            <span id="runs-badge" class="runs-badge"></span>
           </div>
         </form>
 
@@ -121,6 +154,96 @@
         </div>
 
         <div id="error-banner" class="banner banner-error hidden" role="alert"></div>
+      </section>
+
+      <!-- Section 2B: Live Deep Research Runner Panel -->
+      <section id="deep-panel" class="section deep-panel hidden" aria-live="polite">
+        <hr class="section-divider" />
+
+        <div class="deep-panel-card">
+          <div class="deep-panel-header">
+            <div>
+              <div class="deep-status-row">
+                <span id="deep-status-badge" class="deep-status-badge status-planning">
+                  <span class="deep-status-dot"></span>
+                  <span id="deep-status-text">Planning</span>
+                </span>
+                <span id="deep-job-meta" class="deep-job-meta">Wave 0 · 0 queries</span>
+              </div>
+              <h2 id="deep-panel-title" class="deep-panel-title">Deep Research Engine</h2>
+            </div>
+            <button id="deep-stop-btn" type="button" class="btn btn-stop">
+              ⏹ Stop &amp; Export Now
+            </button>
+          </div>
+
+          <div class="deep-progress-wrap">
+            <div class="deep-progress-track">
+              <div id="deep-progress-fill" class="deep-progress-fill" style="width: 6%"></div>
+            </div>
+            <div id="deep-progress-caption" class="deep-progress-caption">0 / 100 validated rows</div>
+          </div>
+
+          <div class="metrics-grid deep-metrics-grid">
+            <div class="metric-card">
+              <div class="metric-label">Wave / Queries</div>
+              <div id="deep-metric-wave" class="metric-value">Wave 0 · 0</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Unique Domains</div>
+              <div id="deep-metric-domains" class="metric-value">0</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Validated Rows</div>
+              <div id="deep-metric-rows" class="metric-value">0</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Elapsed Time</div>
+              <div id="deep-metric-elapsed" class="metric-value">0.0s</div>
+            </div>
+          </div>
+
+          <div class="deep-providers-bar">
+            <span class="deep-providers-label">Providers:</span>
+            <div id="deep-providers-list" class="deep-providers-list"></div>
+          </div>
+
+          <div id="deep-error-banner" class="banner banner-error hidden" role="alert"></div>
+
+          <div id="deep-export-row" class="export-row deep-export-row hidden">
+            <button id="deep-download-xlsx-btn" type="button" class="btn btn-primary btn-export-primary">
+              ⬇️ Download Excel (.xlsx)
+            </button>
+            <button id="deep-download-csv-btn" type="button" class="btn btn-secondary btn-export-secondary">
+              📄 Download CSV
+            </button>
+          </div>
+
+          <div class="deep-preview-head">
+            <h3 class="deep-preview-title">Live Validated Preview (latest 20 rows)</h3>
+          </div>
+          <div class="table-wrap">
+            <table class="results-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th>Key Details</th>
+                  <th>Pricing / Metrics</th>
+                  <th>Notes</th>
+                  <th>Source URL</th>
+                </tr>
+              </thead>
+              <tbody id="deep-preview-tbody">
+                <tr>
+                  <td colspan="6" class="deep-preview-empty">
+                    Planning diverse search waves &amp; discovering verified sources…
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <!-- Section 3: Results Table + Export Buttons -->

@@ -23,15 +23,25 @@ from app.config import (
     get_ga_api_secret,
     get_ga_measurement_id,
 )
+from app.deep_research import (
+    get_export_file_bytes,
+    get_job,
+    request_stop_job,
+    start_deep_research_job,
+)
 from app.exporter import (
     export_rows_to_csv_bytes,
     export_rows_to_excel_bytes,
     make_safe_filename,
 )
 from app.guardrails import SessionRateLimiter, redact_secrets, validate_user_input
+from app.providers.deep_router import get_provider_status
 from app.schemas import (
     CoachRequest,
     CoachResponse,
+    DeepResearchStartRequest,
+    DeepResearchStartResponse,
+    DeepResearchStatusResponse,
     ExportRequest,
     PresetOut,
     PresetsResponse,
@@ -305,4 +315,83 @@ async def api_coach(body: CoachRequest, request: Request) -> CoachResponse:
         suggested_prompt=suggested_prompt,
         model_used=model_used,
         replies_remaining=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deep Research Async Job Endpoints (Strictly Isolated from Fast Mode / Tavily)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/deep-research/providers")
+def api_deep_research_providers() -> dict[str, object]:
+    """Safe boolean readiness check showing which Deep Research providers are configured (never exposes keys)."""
+    return get_provider_status()
+
+
+@app.post("/api/deep-research", response_model=DeepResearchStartResponse)
+async def api_start_deep_research(
+    body: DeepResearchStartRequest,
+    request: Request,
+) -> DeepResearchStartResponse:
+    try:
+        job = start_deep_research_job(body.prompt, target_rows=body.target_rows)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=redact_secrets(str(exc))) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=redact_secrets(str(exc))) from exc
+
+    track_ga_event(
+        "deep_research_started",
+        {"target_rows": body.target_rows or 0},
+        client_id=body.session_id,
+    )
+    return DeepResearchStartResponse(
+        job_id=job.job_id,
+        status="running",
+        active_providers=job.active_providers,
+        target_rows=job.target_rows,
+    )
+
+
+@app.get("/api/deep-research/{job_id}", response_model=DeepResearchStatusResponse)
+def api_deep_research_status(job_id: str) -> DeepResearchStatusResponse:
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Deep Research job not found.")
+    return DeepResearchStatusResponse(**job.to_status_dict())
+
+
+@app.post("/api/deep-research/{job_id}/stop", response_model=DeepResearchStatusResponse)
+def api_deep_research_stop(job_id: str) -> DeepResearchStatusResponse:
+    job = request_stop_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Deep Research job not found.")
+    track_ga_event(
+        "deep_research_stopped",
+        {"rows_collected": len(job.rows), "wave": job.wave},
+    )
+    return DeepResearchStatusResponse(**job.to_status_dict())
+
+
+@app.get("/api/deep-research/{job_id}/download")
+def api_deep_research_download(
+    job_id: str,
+    format: str = Query(default="xlsx", pattern="^(xlsx|csv)$"),
+) -> StreamingResponse:
+    export_pkg = get_export_file_bytes(job_id, fmt=format)
+    if export_pkg is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No exportable rows are ready yet for this Deep Research job.",
+        )
+    data, filename, media_type = export_pkg
+    track_ga_event("deep_research_downloaded", {"format": format})
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
     )

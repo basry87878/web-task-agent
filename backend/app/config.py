@@ -23,8 +23,13 @@ def get_gemini_api_key() -> str | None:
     return _get_env("GEMINI_API_KEY") or _get_env("GOOGLE_API_KEY")
 
 
+def get_google_api_key() -> str | None:
+    """Return GOOGLE_API_KEY first (used by Deep Research), falling back to GEMINI_API_KEY."""
+    return _get_env("GOOGLE_API_KEY") or _get_env("GEMINI_API_KEY")
+
+
 def get_tavily_api_key() -> str | None:
-    """Return TAVILY_API_KEY."""
+    """Return TAVILY_API_KEY (strictly Fast Mode only)."""
     return _get_env("TAVILY_API_KEY")
 
 
@@ -34,8 +39,46 @@ def get_groq_api_key() -> str | None:
 
 
 def get_openrouter_api_key() -> str | None:
-    """Return OPENROUTER_API_KEY (fallback provider for Prompt Coach)."""
+    """Return OPENROUTER_API_KEY (fallback provider for Prompt Coach & Deep Research)."""
     return _get_env("OPENROUTER_API_KEY")
+
+
+# Deep Research discovery & scraping provider getters (exact Render env var names)
+def get_serper_api_key() -> str | None:
+    return _get_env("SERPER_API_KEY")
+
+
+def get_exa_api_key() -> str | None:
+    return _get_env("EXA_API_KEY")
+
+
+def get_serpapi_api_key() -> str | None:
+    return _get_env("SERPAPI_API_KEY")
+
+
+def get_dataforseo_credentials() -> tuple[str, str] | None:
+    login = _get_env("DATAFORSEO_LOGIN")
+    password = _get_env("DATAFORSEO_PASSWORD")
+    if login and password:
+        return (login, password)
+    return None
+
+
+def get_brightdata_config() -> tuple[str, str] | None:
+    api_key = _get_env("BRIGHTDATA_API_KEY")
+    zone = _get_env("BRIGHTDATA_SERP_ZONE")
+    if api_key and zone:
+        return (api_key, zone)
+    return None
+
+
+def get_scrapfly_api_key() -> str | None:
+    return _get_env("SCRAPFLY_API_KEY")
+
+
+def get_apify_token() -> str | None:
+    """Return exact Render env var APIFY (do not rename)."""
+    return _get_env("APIFY")
 
 
 def get_ga_measurement_id() -> str | None:

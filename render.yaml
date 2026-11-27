@@ -18,6 +18,26 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      - key: EXA_API_KEY
+        sync: false
+      - key: SERPAPI_API_KEY
+        sync: false
+      - key: DATAFORSEO_LOGIN
+        sync: false
+      - key: DATAFORSEO_PASSWORD
+        sync: false
+      - key: BRIGHTDATA_API_KEY
+        sync: false
+      - key: BRIGHTDATA_SERP_ZONE
+        sync: false
+      - key: SCRAPFLY_API_KEY
+        sync: false
+      - key: APIFY
+        sync: false
       - key: GA_MEASUREMENT_ID
         sync: false
       - key: GA_API_SECRET

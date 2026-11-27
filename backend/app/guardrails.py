@@ -8,9 +8,17 @@ from urllib.parse import urlparse
 from app.config import (
     MAX_RESEARCH_PROMPT_CHARS,
     RATE_LIMIT_TTL_SECONDS,
+    get_apify_token,
+    get_brightdata_config,
+    get_dataforseo_credentials,
+    get_exa_api_key,
     get_gemini_api_key,
+    get_google_api_key,
     get_groq_api_key,
     get_openrouter_api_key,
+    get_scrapfly_api_key,
+    get_serpapi_api_key,
+    get_serper_api_key,
     get_tavily_api_key,
 )
 
@@ -39,9 +47,10 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bos\.environ\b", re.IGNORECASE),
     re.compile(r"\bapi[\s_-]*key\b", re.IGNORECASE),
     re.compile(
-        r"\b(?:GEMINI|TAVILY|GROQ|OPENROUTER|GOOGLE)_API_KEY\b",
+        r"\b(?:GEMINI|TAVILY|GROQ|OPENROUTER|GOOGLE|SERPER|EXA|SERPAPI|BRIGHTDATA|SCRAPFLY)_API_KEY\b",
         re.IGNORECASE,
     ),
+    re.compile(r"\b(?:DATAFORSEO_PASSWORD|DATAFORSEO_LOGIN|BRIGHTDATA_SERP_ZONE)\b", re.IGNORECASE),
     re.compile(
         r"\b(?:enter\s+developer\s+mode|jailbreak|do\s+anything\s+now)\b",
         re.IGNORECASE,
@@ -117,16 +126,37 @@ def redact_secrets(text: str) -> str:
     redacted = text
     for pattern in _SECRET_PATTERNS:
         redacted = pattern.sub("[REDACTED_KEY]", redacted)
+    secret_values: list[str | None] = []
     for getter in (
         get_gemini_api_key,
+        get_google_api_key,
         get_groq_api_key,
         get_tavily_api_key,
         get_openrouter_api_key,
+        get_serper_api_key,
+        get_exa_api_key,
+        get_serpapi_api_key,
+        get_scrapfly_api_key,
+        get_apify_token,
     ):
         try:
-            secret_val = getter()
+            secret_values.append(getter())
         except Exception:
-            secret_val = None
+            pass
+    try:
+        dfs = get_dataforseo_credentials()
+        if dfs:
+            secret_values.extend(dfs)
+    except Exception:
+        pass
+    try:
+        bd = get_brightdata_config()
+        if bd:
+            secret_values.append(bd[0])
+    except Exception:
+        pass
+
+    for secret_val in secret_values:
         if secret_val and len(secret_val) >= 8 and secret_val in redacted:
             redacted = redacted.replace(secret_val, "[REDACTED_KEY]")
     return redacted

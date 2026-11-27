@@ -46,6 +46,12 @@ const API_BASE = "https://web-task-agent.onrender.com";
     activeIndex: -1,
     isRunning: false,
     runsRemaining: DEFAULT_MAX_CUSTOM_RUNS,
+    deepMode: false,
+    deepTargetRows: 100,
+    deepJobId: null,
+    deepPollTimer: null,
+    deepActiveProviders: [],
+    deepLastState: null,
   };
 
   // DOM references
@@ -55,6 +61,27 @@ const API_BASE = "https://web-task-agent.onrender.com";
   const charCounter = document.getElementById("char-counter");
   const runCustomBtn = document.getElementById("run-custom-btn");
   const runsBadge = document.getElementById("runs-badge");
+  const deepModeToggle = document.getElementById("deep-mode-toggle");
+  const deepControls = document.getElementById("deep-controls");
+  const deepTargetPills = document.getElementById("deep-target-pills");
+  const deepPanel = document.getElementById("deep-panel");
+  const deepStatusBadge = document.getElementById("deep-status-badge");
+  const deepStatusText = document.getElementById("deep-status-text");
+  const deepJobMeta = document.getElementById("deep-job-meta");
+  const deepPanelTitle = document.getElementById("deep-panel-title");
+  const deepStopBtn = document.getElementById("deep-stop-btn");
+  const deepProgressFill = document.getElementById("deep-progress-fill");
+  const deepProgressCaption = document.getElementById("deep-progress-caption");
+  const deepMetricWave = document.getElementById("deep-metric-wave");
+  const deepMetricDomains = document.getElementById("deep-metric-domains");
+  const deepMetricRows = document.getElementById("deep-metric-rows");
+  const deepMetricElapsed = document.getElementById("deep-metric-elapsed");
+  const deepProvidersList = document.getElementById("deep-providers-list");
+  const deepErrorBanner = document.getElementById("deep-error-banner");
+  const deepExportRow = document.getElementById("deep-export-row");
+  const deepDownloadXlsxBtn = document.getElementById("deep-download-xlsx-btn");
+  const deepDownloadCsvBtn = document.getElementById("deep-download-csv-btn");
+  const deepPreviewTbody = document.getElementById("deep-preview-tbody");
   const promptAppliedBanner = document.getElementById("prompt-applied-banner");
   const statusBanner = document.getElementById("status-banner");
   const statusBannerText = document.getElementById("status-banner-text");
@@ -459,19 +486,353 @@ const API_BASE = "https://web-task-agent.onrender.com";
     },
   };
 
+  function fireGA4Event(eventName, params) {
+    try {
+      if (typeof window.gtag === "function") {
+        window.gtag("event", eventName, params || {});
+      }
+    } catch {
+      // ignore analytics errors
+    }
+  }
+
+  function updateDeepModeUI() {
+    if (!deepModeToggle || !deepControls) return;
+    deepModeToggle.classList.toggle("active", state.deepMode);
+    deepModeToggle.setAttribute("aria-pressed", state.deepMode ? "true" : "false");
+    deepControls.classList.toggle("hidden", !state.deepMode);
+    deepControls.setAttribute("aria-hidden", state.deepMode ? "false" : "true");
+    runCustomBtn.textContent = state.deepMode ? "Launch Deep Research" : "Run Custom Research";
+    runsBadge.classList.toggle("hidden", state.deepMode);
+  }
+
+  function stopDeepPolling() {
+    if (state.deepPollTimer) {
+      clearInterval(state.deepPollTimer);
+      state.deepPollTimer = null;
+    }
+  }
+
+  function formatDeepStatusLabel(rawStatus) {
+    const map = {
+      running: "Planning",
+      planning: "Planning",
+      discovering: "Discovering",
+      extracting: "Extracting",
+      completed: "Completed",
+      stopped: "Stopped",
+      error: "Error",
+    };
+    return map[(rawStatus || "").toLowerCase()] || "Running";
+  }
+
+  function renderDeepPanel(jobData) {
+    if (!deepPanel || !jobData) return;
+    state.deepLastState = jobData;
+    deepPanel.classList.remove("hidden");
+
+    const statusKey = (jobData.status || "planning").toLowerCase();
+    const isTerminal = ["completed", "stopped", "error"].includes(statusKey);
+
+    deepStatusText.textContent = formatDeepStatusLabel(statusKey);
+    deepStatusBadge.className = `deep-status-badge status-${statusKey}${isTerminal ? "" : " is-live"}`;
+    deepJobMeta.textContent = `Wave ${jobData.wave || 0} · ${jobData.queries_completed || 0} queries completed`;
+    deepPanelTitle.textContent = jobData.title || "Deep Research Engine";
+
+    deepStopBtn.classList.toggle("hidden", isTerminal);
+    deepStopBtn.disabled = isTerminal;
+
+    const collected = jobData.rows_collected || 0;
+    const target = jobData.target_rows;
+    if (target && target > 0) {
+      const pct = isTerminal && statusKey === "completed" ? 100 : Math.min(100, Math.max(4, Math.round((collected / target) * 100)));
+      deepProgressFill.classList.remove("continuous-pulse");
+      deepProgressFill.style.width = `${pct}%`;
+      deepProgressCaption.textContent = `${collected.toLocaleString()} / ${target.toLocaleString()} validated rows (${pct}%)`;
+    } else {
+      if (isTerminal) {
+        deepProgressFill.classList.remove("continuous-pulse");
+        deepProgressFill.style.width = "100%";
+      } else {
+        deepProgressFill.classList.add("continuous-pulse");
+      }
+      deepProgressCaption.textContent = `${collected.toLocaleString()} validated rows collected · Continuous mode (stop anytime)`;
+    }
+
+    deepMetricWave.textContent = `Wave ${jobData.wave || 0} · ${jobData.queries_completed || 0}`;
+    deepMetricDomains.textContent = String(jobData.urls_discovered || 0);
+    deepMetricRows.textContent = target && target > 0 ? `${collected} / ${target}` : String(collected);
+    deepMetricElapsed.textContent = `${Number(jobData.elapsed_seconds || 0).toFixed(1)}s`;
+
+    // Render provider pills
+    const usedSet = new Set(jobData.providers_used || []);
+    const exhaustedSet = new Set(jobData.providers_exhausted || []);
+    const allNames = Array.from(
+      new Set([...(state.deepActiveProviders || []), ...usedSet, ...exhaustedSet])
+    );
+    if (allNames.length) {
+      deepProvidersList.innerHTML = allNames
+        .map((name) => {
+          const cls = exhaustedSet.has(name)
+            ? "provider-chip exhausted"
+            : usedSet.has(name)
+            ? "provider-chip active"
+            : "provider-chip";
+          return `<span class="${cls}">${escapeHtml(name)}</span>`;
+        })
+        .join("");
+    } else {
+      deepProvidersList.innerHTML = '<span class="provider-chip">Multi-Engine Router</span>';
+    }
+
+    if (jobData.error) {
+      deepErrorBanner.textContent = jobData.error;
+      deepErrorBanner.classList.remove("hidden");
+    } else {
+      deepErrorBanner.classList.add("hidden");
+    }
+
+    if (jobData.has_export) {
+      deepExportRow.classList.remove("hidden");
+    } else {
+      deepExportRow.classList.add("hidden");
+    }
+
+    const preview = jobData.preview_rows || [];
+    if (!preview.length) {
+      deepPreviewTbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="deep-preview-empty">
+            ${
+              isTerminal
+                ? "No verified rows were extracted for this run."
+                : "Discovering unique domains & extracting verified rows…"
+            }
+          </td>
+        </tr>`;
+    } else {
+      deepPreviewTbody.innerHTML = preview
+        .slice()
+        .reverse()
+        .map((row) => {
+          const url = row["Source URL"] || "";
+          const urlCell = isSafeHttpUrl(url)
+            ? `<a class="source-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>`
+            : "—";
+          return `
+            <tr>
+              <td class="col-name">${escapeHtml(row["Name"] || "")}</td>
+              <td class="col-category">${escapeHtml(row["Category"] || "")}</td>
+              <td class="col-details">${escapeHtml(row["Key Details"] || "")}</td>
+              <td class="col-metrics">${escapeHtml(row["Pricing / Metrics"] || "")}</td>
+              <td class="col-notes">${escapeHtml(row["Notes"] || "")}</td>
+              <td class="col-url">${urlCell}</td>
+            </tr>`;
+        })
+        .join("");
+    }
+  }
+
+  async function pollDeepJob() {
+    if (!state.deepJobId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/deep-research/${encodeURIComponent(state.deepJobId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      renderDeepPanel(data);
+      const st = (data.status || "").toLowerCase();
+      if (st === "completed" || st === "stopped" || st === "error") {
+        stopDeepPolling();
+        setRunning(false);
+        if (st === "completed") {
+          fireGA4Event("deep_research_completed", {
+            rows_collected: data.rows_collected || 0,
+          });
+        }
+      }
+    } catch {
+      // transient network blip while polling; keep retrying on next 3s tick
+    }
+  }
+
+  async function startDeepResearch(promptText) {
+    const cleaned = (promptText || "").trim();
+    if (cleaned.length < 10) {
+      showError("Please enter a slightly more detailed research brief (at least 10 characters).");
+      return;
+    }
+
+    stopDeepPolling();
+    errorBanner.classList.add("hidden");
+    deepErrorBanner.classList.add("hidden");
+    setRunning(true, "Launching multi-engine Deep Research wave planner…");
+
+    try {
+      const targetPayload = state.deepTargetRows > 0 ? state.deepTargetRows : 0;
+      const res = await fetch(`${API_BASE}/api/deep-research`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: cleaned,
+          target_rows: targetPayload,
+          session_id: sessionId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.detail || `Could not start Deep Research (HTTP ${res.status}).`);
+      }
+
+      state.deepJobId = data.job_id;
+      state.deepActiveProviders = data.active_providers || [];
+      statusBanner.classList.add("hidden");
+
+      fireGA4Event("deep_research_started", {
+        target_rows: targetPayload,
+      });
+
+      renderDeepPanel({
+        job_id: data.job_id,
+        status: "planning",
+        wave: 0,
+        queries_completed: 0,
+        urls_discovered: 0,
+        rows_collected: 0,
+        target_rows: targetPayload > 0 ? targetPayload : null,
+        providers_used: [],
+        providers_exhausted: [],
+        preview_rows: [],
+        has_export: false,
+        elapsed_seconds: 0,
+        title: `Deep Research: ${cleaned.slice(0, 68)}`,
+      });
+      deepPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      // Poll every 3 seconds (also keeps Render free service warm during long runs)
+      state.deepPollTimer = setInterval(pollDeepJob, 3000);
+      pollDeepJob();
+    } catch (err) {
+      setRunning(false);
+      showError(err.message || "Could not start Deep Research. Please try again.");
+    }
+  }
+
+  async function stopDeepResearch() {
+    if (!state.deepJobId) return;
+    deepStopBtn.disabled = true;
+    deepStopBtn.textContent = "Stopping & Finalizing…";
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/deep-research/${encodeURIComponent(state.deepJobId)}/stop`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => null);
+      stopDeepPolling();
+      setRunning(false);
+      if (data) {
+        renderDeepPanel(data);
+        fireGA4Event("deep_research_stopped", {
+          rows_collected: data.rows_collected || 0,
+        });
+      }
+    } catch {
+      deepStopBtn.disabled = false;
+    } finally {
+      deepStopBtn.textContent = "⏹ Stop & Export Now";
+    }
+  }
+
+  async function downloadDeepExport(format) {
+    if (!state.deepJobId) return;
+    const btn = format === "csv" ? deepDownloadCsvBtn : deepDownloadXlsxBtn;
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = format === "csv" ? "Preparing CSV…" : "Preparing Excel…";
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/deep-research/${encodeURIComponent(state.deepJobId)}/download?format=${encodeURIComponent(format)}`
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Download failed (HTTP ${res.status}).`);
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get("Content-Disposition") || "";
+      const match = disp.match(/filename="?([^"]+)"?/i);
+      const downloadName = match
+        ? match[1]
+        : `deep_research_${state.deepJobId}.${format}`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      fireGA4Event("deep_research_downloaded", { format });
+    } catch (err) {
+      deepErrorBanner.textContent = err.message || "Download failed.";
+      deepErrorBanner.classList.remove("hidden");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
+
   promptInput.addEventListener("input", updateCharCounter);
+
+  if (deepModeToggle) {
+    deepModeToggle.addEventListener("click", () => {
+      state.deepMode = !state.deepMode;
+      updateDeepModeUI();
+    });
+  }
+
+  if (deepTargetPills) {
+    deepTargetPills.querySelectorAll(".target-pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        state.deepTargetRows = Number(pill.getAttribute("data-target") || "100");
+        deepTargetPills.querySelectorAll(".target-pill").forEach((p) => {
+          const active = p === pill;
+          p.classList.toggle("active", active);
+          p.setAttribute("aria-checked", active ? "true" : "false");
+        });
+      });
+    });
+  }
+
+  if (deepStopBtn) {
+    deepStopBtn.addEventListener("click", stopDeepResearch);
+  }
+  if (deepDownloadXlsxBtn) {
+    deepDownloadXlsxBtn.addEventListener("click", () => downloadDeepExport("xlsx"));
+  }
+  if (deepDownloadCsvBtn) {
+    deepDownloadCsvBtn.addEventListener("click", () => downloadDeepExport("csv"));
+  }
 
   customForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    executeResearch({ prompt: promptInput.value, presetId: null });
+    if (state.deepMode) {
+      startDeepResearch(promptInput.value);
+    } else {
+      executeResearch({ prompt: promptInput.value, presetId: null });
+    }
   });
 
   downloadXlsxBtn.addEventListener("click", () => downloadExport("xlsx"));
   downloadCsvBtn.addEventListener("click", () => downloadExport("csv"));
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bootApp);
+    document.addEventListener("DOMContentLoaded", () => {
+      updateDeepModeUI();
+      bootApp();
+    });
   } else {
+    updateDeepModeUI();
     bootApp();
   }
 })();

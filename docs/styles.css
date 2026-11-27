@@ -407,14 +407,328 @@ code {
 .form-actions {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.9rem;
   margin-top: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.form-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
   flex-wrap: wrap;
 }
 
 .runs-badge {
   font-size: 0.82rem;
   color: var(--text-muted);
+}
+
+/* Inline Deep Research Toggle ("Think"-style outline icon button) */
+.deep-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.46rem 0.9rem;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.deep-toggle-btn:hover:not(:disabled) {
+  color: var(--navy);
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.deep-toggle-btn.active {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.1);
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.deep-toggle-icon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* Compact Deep Research Controls Drawer */
+.deep-controls {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.045);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  animation: fadeSlideIn 0.18s ease-out;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.deep-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.deep-controls-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.target-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.target-pill {
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: #ffffff;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.28rem 0.72rem;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.target-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.target-pill.active {
+  background: var(--navy);
+  color: #ffffff;
+  border-color: var(--navy);
+}
+
+.deep-controls-hint {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Live Deep Research Runner Panel */
+.deep-panel-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem 1.35rem;
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+}
+
+.deep-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.deep-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.deep-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.deep-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.deep-status-badge.is-live .deep-status-dot {
+  animation: pulseDot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.deep-status-badge.status-completed {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.deep-status-badge.status-stopped {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+
+.deep-status-badge.status-error {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.deep-job-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.deep-panel-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.btn-stop {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
+.btn-stop:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.deep-progress-wrap {
+  margin-bottom: 1rem;
+}
+
+.deep-progress-track {
+  width: 100%;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  overflow: hidden;
+}
+
+.deep-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  transition: width 0.35s ease;
+}
+
+.deep-progress-fill.continuous-pulse {
+  width: 35% !important;
+  animation: slideContinuous 1.6s ease-in-out infinite;
+}
+
+@keyframes slideContinuous {
+  0% { transform: translateX(-80%); }
+  100% { transform: translateX(300%); }
+}
+
+.deep-progress-caption {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.deep-metrics-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.deep-providers-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin: 0.25rem 0 1rem 0;
+}
+
+.deep-providers-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.deep-providers-list {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.provider-chip {
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--navy);
+  border: 1px solid var(--border);
+}
+
+.provider-chip.active {
+  background: var(--success-bg);
+  color: var(--success-text);
+  border-color: var(--success-border);
+}
+
+.provider-chip.exhausted {
+  background: var(--surface-subtle);
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+
+.deep-export-row {
+  margin: 0.75rem 0 1rem 0;
+}
+
+.deep-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.deep-preview-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.deep-preview-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 1.4rem !important;
+  font-style: italic;
 }
 
 /* Banners & Spinner */

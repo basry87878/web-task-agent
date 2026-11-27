@@ -268,3 +268,34 @@ class CoachResponse(BaseModel):
     suggested_prompt: str | None = None
     model_used: str
     replies_remaining: int | None = None
+
+
+class DeepResearchStartRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=1000)
+    target_rows: int | None = Field(default=100, ge=0, le=5000)
+    session_id: str | None = None
+
+
+class DeepResearchStartResponse(BaseModel):
+    job_id: str
+    status: str
+    active_providers: list[str]
+    target_rows: int | None = None
+
+
+class DeepResearchStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    wave: int
+    queries_completed: int
+    urls_discovered: int
+    rows_collected: int
+    target_rows: int | None = None
+    providers_used: list[str]
+    providers_exhausted: list[str]
+    preview_rows: list[dict[str, str]]
+    has_export: bool
+    elapsed_seconds: float
+    error: str | None = None
+    title: str | None = None
+    filename: str | None = None
