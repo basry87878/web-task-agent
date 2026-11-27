@@ -1,7 +1,7 @@
 (function () {
   // Set this to your deployed Render backend URL before publishing to GitHub Pages,
   // e.g. "https://jobtruth-api.onrender.com" (no trailing slash).
-  const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://web-task-agent.onrender.com";
 
   const FALLBACK_PRESETS = [
     {
