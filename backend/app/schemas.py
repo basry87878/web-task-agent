@@ -221,7 +221,7 @@ class PresetOut(BaseModel):
 class PresetsResponse(BaseModel):
     presets: list[PresetOut]
     runs_remaining: int
-    replies_remaining: int
+    replies_remaining: int | None = None
     ga_measurement_id: str | None = None
 
 
@@ -267,4 +267,4 @@ class CoachResponse(BaseModel):
     reply: str
     suggested_prompt: str | None = None
     model_used: str
-    replies_remaining: int
+    replies_remaining: int | None = None

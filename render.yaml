@@ -31,6 +31,4 @@ services:
       - key: GROQ_SECONDARY_FALLBACK_MODEL
         value: "openai/gpt-oss-120b"
       - key: MAX_RESEARCH_RUNS_PER_SESSION
-        value: "3"
-      - key: MAX_COACH_REPLIES_PER_SESSION
-        value: "10"
+        value: "20"

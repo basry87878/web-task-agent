@@ -38,12 +38,14 @@ const API_BASE = "https://web-task-agent.onrender.com";
     (crypto.randomUUID ? crypto.randomUUID() : "sid-" + Date.now());
   sessionStorage.setItem("jobtruth_sid", sessionId);
 
+  const DEFAULT_MAX_CUSTOM_RUNS = 20;
+
   const state = {
     presets: FALLBACK_PRESETS,
     history: [],
     activeIndex: -1,
     isRunning: false,
-    runsRemaining: null,
+    runsRemaining: DEFAULT_MAX_CUSTOM_RUNS,
   };
 
   // DOM references
@@ -403,6 +405,7 @@ const API_BASE = "https://web-task-agent.onrender.com";
     renderPresets();
     renderHistory();
     updateCharCounter();
+    updateRunsBadge();
 
     // 1. Silent non-blocking /health wake-up ping for Render free tier
     fetch(`${API_BASE}/health`, { method: "GET" })

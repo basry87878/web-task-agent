@@ -13,7 +13,6 @@ from fastapi.responses import StreamingResponse
 from app.agent import get_cached_research, normalize_prompt_cache_key, run_research
 from app.coach import ask_prompt_coach
 from app.config import (
-    MAX_COACH_REPLIES_PER_SESSION,
     MAX_RESEARCH_PROMPT_CHARS,
     MAX_RESEARCH_RUNS_PER_SESSION,
     PRESETS,
@@ -58,10 +57,6 @@ app.add_middleware(
 
 research_limiter = SessionRateLimiter(
     max_count=MAX_RESEARCH_RUNS_PER_SESSION,
-    ttl_seconds=RATE_LIMIT_TTL_SECONDS,
-)
-coach_limiter = SessionRateLimiter(
-    max_count=MAX_COACH_REPLIES_PER_SESSION,
     ttl_seconds=RATE_LIMIT_TTL_SECONDS,
 )
 
@@ -129,7 +124,7 @@ def get_presets(
     return PresetsResponse(
         presets=[PresetOut(**p) for p in PRESETS],
         runs_remaining=research_limiter.remaining(key),
-        replies_remaining=coach_limiter.remaining(key),
+        replies_remaining=None,
         ga_measurement_id=get_ga_measurement_id(),
     )
 
@@ -281,17 +276,6 @@ def api_export(body: ExportRequest) -> StreamingResponse:
 
 @app.post("/api/coach", response_model=CoachResponse)
 async def api_coach(body: CoachRequest, request: Request) -> CoachResponse:
-    key = _client_key(request, body.session_id)
-    allowed, _rem = coach_limiter.can_consume(key)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=(
-                f"You've reached the session limit of {MAX_COACH_REPLIES_PER_SESSION} assistant replies. "
-                "Try running a research brief or reach out to Abdelrahman Basry via LinkedIn or email."
-            ),
-        )
-
     msg_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
     t0 = time.perf_counter()
     try:
@@ -306,12 +290,10 @@ async def api_coach(body: CoachRequest, request: Request) -> CoachResponse:
             detail=redact_secrets(str(exc)),
         ) from exc
 
-    replies_rem = coach_limiter.consume(key, touch_cooldown=False)
     elapsed = round(time.perf_counter() - t0, 2)
     track_ga_event(
         "prompt_coach_message",
         {
-            "replies_remaining": replies_rem,
             "has_suggested_prompt": bool(suggested_prompt),
             "duration_sec": elapsed,
         },
@@ -322,5 +304,5 @@ async def api_coach(body: CoachRequest, request: Request) -> CoachResponse:
         reply=reply_text,
         suggested_prompt=suggested_prompt,
         model_used=model_used,
-        replies_remaining=replies_rem,
+        replies_remaining=None,
     )

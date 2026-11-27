@@ -1,7 +1,7 @@
 (function () {
   // Set this to your deployed Render backend URL before publishing to GitHub Pages,
   // e.g. "https://jobtruth-api.onrender.com" (no trailing slash).
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = "https://web-task-agent.onrender.com";
 
   function initCoachWidget() {
     if (document.getElementById("jobtruth-coach-host")) return;
@@ -116,7 +116,7 @@
         .chip:disabled { opacity: 0.45; cursor: not-allowed; }
 
         .form {
-          display: flex; gap: 8px; padding: 10px 10px 6px 10px;
+          display: flex; gap: 8px; padding: 10px;
           border-top: 1px solid #e5e7eb; background: #ffffff;
         }
         .input {
@@ -132,11 +132,6 @@
         }
         .send-btn:hover:not(:disabled) { background: #1f2937; }
         .send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-
-        .footer-note {
-          font-size: 11px; color: #6b7280; text-align: center;
-          padding: 2px 10px 10px 10px; background: #ffffff;
-        }
       </style>
 
       <button class="toggle-btn" id="toggle" aria-label="Open Research Assistant">
@@ -166,7 +161,6 @@
           <input class="input" id="input" type="text" placeholder="Write a message..." maxlength="400" required />
           <button class="send-btn" id="send" type="submit">Send</button>
         </form>
-        <div class="footer-note" id="footer-note">10/10 replies left · Powered by JobTruth AI</div>
       </div>
     `;
 
@@ -178,10 +172,8 @@
     const form = shadow.getElementById("form");
     const input = shadow.getElementById("input");
     const sendBtn = shadow.getElementById("send");
-    const footerNote = shadow.getElementById("footer-note");
 
     const history = [];
-    let repliesRemaining = 10;
     let busy = false;
 
     function formatSafeHtml(text) {
@@ -210,13 +202,11 @@
     }
 
     function updateControls() {
-      const exhausted = repliesRemaining <= 0;
-      input.disabled = busy || exhausted;
-      sendBtn.disabled = busy || exhausted;
+      input.disabled = busy;
+      sendBtn.disabled = busy;
       chipsEl.querySelectorAll(".chip").forEach((c) => {
-        c.disabled = busy || exhausted;
+        c.disabled = busy;
       });
-      footerNote.textContent = `${repliesRemaining}/10 replies left · Powered by JobTruth AI`;
     }
 
     function addMessage(text, role) {
@@ -245,7 +235,7 @@
 
     async function sendText(text) {
       const cleaned = (text || "").trim();
-      if (!cleaned || busy || repliesRemaining <= 0) return;
+      if (!cleaned || busy) return;
 
       busy = true;
       updateControls();
@@ -271,15 +261,9 @@
           typingEl.innerHTML = formatSafeHtml(
             data.detail || "Could not get a reply right now. Please try again."
           );
-          if (res.status === 429) repliesRemaining = 0;
         } else {
           typingEl.innerHTML = formatSafeHtml(data.reply);
           history.push({ role: "assistant", content: data.reply });
-          if (typeof data.replies_remaining === "number") {
-            repliesRemaining = data.replies_remaining;
-          } else {
-            repliesRemaining = Math.max(0, repliesRemaining - 1);
-          }
           if (data.suggested_prompt) {
             addUsePromptButton(data.suggested_prompt);
           }
@@ -291,7 +275,7 @@
       } finally {
         busy = false;
         updateControls();
-        if (repliesRemaining > 0) input.focus();
+        input.focus();
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
     }
