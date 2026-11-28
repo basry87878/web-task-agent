@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 import json
 import re
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 import httpx
@@ -206,8 +206,9 @@ class DeepRouter:
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> DeepRouter:
+        # follow_redirects=False prevents redirect-based SSRF into cloud metadata / private IPs
         self._client = httpx.AsyncClient(
-            follow_redirects=True,
+            follow_redirects=False,
             headers={
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -559,8 +560,21 @@ class DeepRouter:
     async def _enrich_tier1_httpx(self, hit: DiscoveryHit) -> None:
         async with self._httpx_sem:
             try:
-                resp = await self.client.get(hit.url, timeout=10.0)
-                if resp.status_code >= 400:
+                current_url = hit.url
+                resp: httpx.Response | None = None
+                for _hop in range(4):
+                    safe_ok = await asyncio.to_thread(is_safe_http_url, current_url, resolve_dns=True)
+                    if not safe_ok:
+                        return
+                    resp = await self.client.get(current_url, timeout=10.0)
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        location = resp.headers.get("location")
+                        if not location:
+                            return
+                        current_url = urljoin(current_url, location)
+                        continue
+                    break
+                if resp is None or resp.status_code >= 400:
                     return
                 ctype = (resp.headers.get("content-type") or "").lower()
                 if "html" not in ctype and "text" not in ctype:
@@ -575,6 +589,8 @@ class DeepRouter:
     async def _enrich_tier2_scrapfly(self, hit: DiscoveryHit) -> None:
         api_key = get_scrapfly_api_key()
         if not api_key or "scrapfly" in self.exhausted:
+            return
+        if not is_safe_http_url(hit.url):
             return
         async with self._scrapfly_sem:
             if "scrapfly" in self.exhausted:
@@ -605,7 +621,8 @@ class DeepRouter:
 
     async def _enrich_tier3_apify(self, hits: list[DiscoveryHit]) -> None:
         token = get_apify_token()
-        if not token or not hits or "apify" in self.exhausted:
+        safe_hits = [h for h in hits if is_safe_http_url(h.url)]
+        if not token or not safe_hits or "apify" in self.exhausted:
             return
         async with self._apify_sem:
             if "apify" in self.exhausted:
@@ -615,8 +632,8 @@ class DeepRouter:
                     "https://api.apify.com/v2/acts/apify~website-content-crawler/run-sync-get-dataset-items",
                     params={"token": token},
                     json={
-                        "startUrls": [{"url": h.url} for h in hits],
-                        "maxCrawlPages": len(hits),
+                        "startUrls": [{"url": h.url} for h in safe_hits],
+                        "maxCrawlPages": len(safe_hits),
                         "maxCrawlDepth": 0,
                     },
                     timeout=90.0,
@@ -626,8 +643,8 @@ class DeepRouter:
                 items = resp.json()
                 if not isinstance(items, list):
                     return
-                by_url = {h.url.rstrip("/").lower(): h for h in hits}
-                by_domain = {h.root_domain: h for h in hits if h.root_domain}
+                by_url = {h.url.rstrip("/").lower(): h for h in safe_hits}
+                by_domain = {h.root_domain: h for h in safe_hits if h.root_domain}
                 matched_any = False
                 for item in items:
                     if not isinstance(item, dict):

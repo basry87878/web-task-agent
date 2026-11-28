@@ -181,7 +181,8 @@
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
       const lines = escaped.split(/\r?\n/).map((line) => {
         if (line.startsWith("&gt; ")) {
           return `<div class="quote-box">${line.slice(5)}</div>`;
@@ -191,10 +192,15 @@
       return lines
         .join("<br>")
         .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        .replace(
-          /(https?:\/\/[^\s<)]+)/g,
-          '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-        )
+        .replace(/(https?:\/\/[^\s<>"'&)]+)/g, (match) => {
+          try {
+            const u = new URL(match);
+            if (u.protocol !== "http:" && u.protocol !== "https:") return match;
+            return `<a href="${u.href}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+          } catch {
+            return match;
+          }
+        })
         .replace(
           /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g,
           '<a href="mailto:$1">$1</a>'

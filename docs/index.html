@@ -15,7 +15,7 @@
     window.JOBTRUTH_GA_ID = "";
     window.initJobTruthGA = function (measurementId) {
       var mid = (measurementId || window.JOBTRUTH_GA_ID || "").trim();
-      if (!mid || document.getElementById("ga4-gtag-script")) return;
+      if (!/^G-[A-Z0-9]{4,20}$/i.test(mid) || document.getElementById("ga4-gtag-script")) return;
       var s = document.createElement("script");
       s.id = "ga4-gtag-script";
       s.async = true;

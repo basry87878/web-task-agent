@@ -47,6 +47,93 @@ _SUGGESTED_PROMPT_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Reject control characters (except \n, \r, \t) and prompt-sandbox / role-delimiter smuggling
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_COACH_MALFORMED_OR_SMUGGLED_RE = re.compile(
+    r"(?:</?\s*(?:user_request|system|assistant|developer|instructions?)\s*>|"
+    r"<\|(?:im_start|im_end|system|endoftext)\|>|"
+    r"\[/?INST\]|<<\s*/?SYS\s*>>)",
+    re.IGNORECASE,
+)
+
+
+class CoachInputError(ValueError):
+    """Raised when a /api/coach request contains malformed or injection-like input."""
+
+
+class CoachUpstreamTimeoutError(RuntimeError):
+    """Raised when upstream Prompt Coach LLM calls time out."""
+
+
+class CoachUpstreamError(RuntimeError):
+    """Raised when upstream Prompt Coach LLM providers fail or return malformed responses."""
+
+
+def _build_http_timeout(read_seconds: float) -> httpx.Timeout:
+    """Build explicit granular timeouts (connect/read/write/pool) for upstream LLM HTTP calls."""
+    safe_read = max(1.0, float(read_seconds))
+    return httpx.Timeout(
+        connect=min(5.0, safe_read),
+        read=safe_read,
+        write=min(10.0, safe_read),
+        pool=min(5.0, safe_read),
+    )
+
+
+def _validate_coach_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """
+    Validate and sanitize recent coach conversation turns before any upstream LLM call.
+    Raises CoachInputError on malformed payloads, control characters, delimiter smuggling,
+    or prompt-injection attempts.
+    """
+    if not isinstance(messages, list) or not messages:
+        raise CoachInputError("Please enter a valid message for the Research Assistant.")
+
+    recent = messages[-8:]
+    user_messages: list[str] = []
+    sandboxed_history: list[dict[str, str]] = []
+
+    for msg in recent:
+        if not isinstance(msg, dict):
+            raise CoachInputError("Malformed message object in conversation payload.")
+        role = msg.get("role")
+        raw_content = msg.get("content")
+        if role not in ("user", "assistant") or not isinstance(raw_content, str):
+            raise CoachInputError("Malformed message role or content in conversation payload.")
+        if _CONTROL_CHAR_RE.search(raw_content):
+            raise CoachInputError("Input contains invalid control characters.")
+
+        content = raw_content.strip()
+        if not content:
+            continue
+
+        if role == "user":
+            if _COACH_MALFORMED_OR_SMUGGLED_RE.search(content):
+                raise CoachInputError(
+                    "For security reasons, that request couldn't be processed. "
+                    "Please enter a standard B2B market research question or prompt."
+                )
+            is_valid, validated_or_err = validate_user_input(
+                content,
+                max_chars=MAX_COACH_MESSAGE_CHARS,
+                min_chars=1,
+            )
+            if not is_valid:
+                raise CoachInputError(validated_or_err)
+            user_messages.append(validated_or_err)
+            sandboxed_history.append(
+                {"role": "user", "content": wrap_sandbox("user_request", validated_or_err)}
+            )
+        else:
+            if len(content) > 2000:
+                content = content[:2000]
+            sandboxed_history.append({"role": "assistant", "content": content})
+
+    if not user_messages:
+        raise CoachInputError("Please enter a non-empty message for the Research Assistant.")
+
+    return sandboxed_history
+
 
 def extract_suggested_prompt(reply_text: str) -> tuple[str, str | None]:
     """Extract an optional <suggested_prompt> block and return (display_text, suggested_prompt)."""
@@ -103,16 +190,32 @@ def _call_openai_compat(
     if extra_body:
         payload.update(extra_body)
 
-    resp = httpx.post(url, headers=headers, json=payload, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp = httpx.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=_build_http_timeout(timeout),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.TimeoutException as exc:
+        raise CoachUpstreamTimeoutError(f"Upstream request timed out after {timeout:.0f}s") from exc
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        raise CoachUpstreamError(f"Upstream provider returned HTTP {status}") from exc
+    except httpx.RequestError as exc:
+        raise CoachUpstreamError("Upstream provider network error") from exc
+    except ValueError as exc:
+        raise CoachUpstreamError("Upstream provider returned malformed JSON") from exc
+
     choices = data.get("choices") if isinstance(data, dict) else None
-    if not choices:
-        raise RuntimeError("Empty choices list returned")
+    if not choices or not isinstance(choices, list) or not isinstance(choices[0], dict):
+        raise CoachUpstreamError("Empty or invalid choices list returned")
     raw_content = (choices[0].get("message") or {}).get("content")
     text = _extract_content_text(raw_content).strip()
     if not text:
-        raise RuntimeError("Model returned empty content")
+        raise CoachUpstreamError("Model returned empty content")
     return text
 
 
@@ -137,16 +240,32 @@ def _call_gemini_rest(
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 900},
     }
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    resp = httpx.post(url, params={"key": api_key}, json=payload, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    candidates = data.get("candidates") or []
-    if not candidates:
-        raise RuntimeError("Gemini returned no candidates")
+    try:
+        resp = httpx.post(
+            url,
+            params={"key": api_key},
+            json=payload,
+            timeout=_build_http_timeout(timeout),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.TimeoutException as exc:
+        raise CoachUpstreamTimeoutError(f"Gemini request timed out after {timeout:.0f}s") from exc
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        raise CoachUpstreamError(f"Gemini returned HTTP {status}") from exc
+    except httpx.RequestError as exc:
+        raise CoachUpstreamError("Gemini network error") from exc
+    except ValueError as exc:
+        raise CoachUpstreamError("Gemini returned malformed JSON") from exc
+
+    candidates = (data.get("candidates") or []) if isinstance(data, dict) else []
+    if not candidates or not isinstance(candidates[0], dict):
+        raise CoachUpstreamError("Gemini returned no candidates")
     parts = ((candidates[0].get("content") or {}).get("parts")) or []
     text = "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
     if not text:
-        raise RuntimeError("Gemini returned blank text")
+        raise CoachUpstreamError("Gemini returned blank text")
     return text
 
 
@@ -156,26 +275,7 @@ def ask_prompt_coach(messages: list[dict[str, str]]) -> tuple[str, str | None, s
     Provider priority: Groq (qwen3.8-27b -> gpt-oss-120b) -> Gemini (3.5-flash-lite) -> OpenRouter (openrouter/free).
     Returns (display_text, optional_suggested_prompt, model_used_display).
     """
-    latest_user = next(
-        (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
-        "",
-    )
-    is_valid, validated_or_err = validate_user_input(
-        latest_user,
-        max_chars=MAX_COACH_MESSAGE_CHARS,
-        min_chars=1,
-    )
-    if not is_valid:
-        raise ValueError(validated_or_err)
-
-    sandboxed_history: list[dict[str, str]] = []
-    for m in messages[-8:]:
-        role = m.get("role")
-        content = (m.get("content") or "").strip()
-        if role == "user" and content:
-            sandboxed_history.append({"role": "user", "content": wrap_sandbox("user_request", content)})
-        elif role == "assistant" and content:
-            sandboxed_history.append({"role": "assistant", "content": content})
+    sandboxed_history = _validate_coach_messages(messages)
 
     openai_messages = [
         {"role": "system", "content": PROMPT_COACH_SYSTEM_PROMPT},
@@ -187,11 +287,12 @@ def ask_prompt_coach(messages: list[dict[str, str]]) -> tuple[str, str | None, s
     openrouter_key = get_openrouter_api_key()
 
     if not any((groq_key, gemini_key, openrouter_key)):
-        raise RuntimeError(
+        raise CoachUpstreamError(
             "No LLM API key configured for Prompt Coach (set GROQ_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY)."
         )
 
     errors: list[str] = []
+    saw_timeout = False
 
     # 1. Groq primary (fast & reliable)
     if groq_key:
@@ -213,6 +314,9 @@ def ask_prompt_coach(messages: list[dict[str, str]]) -> tuple[str, str | None, s
                     redact_secrets(suggested) if suggested else None,
                     format_model_display(f"groq/{groq_model}"),
                 )
+            except CoachUpstreamTimeoutError as exc:
+                saw_timeout = True
+                errors.append(f"groq/{groq_model}: {format_exc(exc)}")
             except Exception as exc:
                 errors.append(f"groq/{groq_model}: {format_exc(exc)}")
 
@@ -233,10 +337,13 @@ def ask_prompt_coach(messages: list[dict[str, str]]) -> tuple[str, str | None, s
                 redact_secrets(suggested) if suggested else None,
                 format_model_display(FALLBACK_MODEL),
             )
+        except CoachUpstreamTimeoutError as exc:
+            saw_timeout = True
+            errors.append(f"{FALLBACK_MODEL}: {format_exc(exc)}")
         except Exception as exc:
             errors.append(f"{FALLBACK_MODEL}: {format_exc(exc)}")
 
-    # 3. OpenRouter fallback
+    # 3. OpenRouter fallback (wrapped with explicit timeout and structured error handling)
     if openrouter_key:
         for _attempt in range(2):
             try:
@@ -259,9 +366,18 @@ def ask_prompt_coach(messages: list[dict[str, str]]) -> tuple[str, str | None, s
                     redact_secrets(suggested) if suggested else None,
                     "OpenRouter Free",
                 )
+            except CoachUpstreamTimeoutError as exc:
+                saw_timeout = True
+                errors.append(f"openrouter: {format_exc(exc)}")
+                break  # Avoid double-waiting on a full upstream timeout
             except Exception as exc:
                 errors.append(f"openrouter: {format_exc(exc)}")
 
-    raise RuntimeError(
-        redact_secrets("Prompt Coach is temporarily unavailable. Details: " + " | ".join(errors))
+    detail = redact_secrets(" | ".join(errors))
+    if saw_timeout:
+        raise CoachUpstreamTimeoutError(
+            f"Prompt Coach upstream request timed out. Details: {detail}"
+        )
+    raise CoachUpstreamError(
+        f"Prompt Coach is temporarily unavailable. Details: {detail}"
     )

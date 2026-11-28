@@ -90,10 +90,13 @@ class ResearchReport(BaseModel):
         description="2-4 sentence executive summary highlighting the main findings.",
     )
     items: list[ResearchItem] = Field(
-        ...,
-        min_length=1,
+        default_factory=list,
+        min_length=0,
         max_length=25,
-        description="List of structured research rows with verified source URLs.",
+        description=(
+            "List of strictly verified, deduplicated research rows. Never pad to hit a quota; "
+            "return an empty list [] if zero sources strictly satisfy the user's criteria."
+        ),
     )
 
 
@@ -112,26 +115,62 @@ def normalize_url(url: str) -> str:
     return f"{scheme}://{netloc}{path}{query}"
 
 
+def _has_materially_different_pricing(pricing_a: str, pricing_b: str) -> bool:
+    """Return True when two rows for the same canonical entity have genuinely distinct concrete pricing tiers."""
+    a = " ".join((pricing_a or "").strip().lower().split())
+    b = " ".join((pricing_b or "").strip().lower().split())
+    sparse = {"", "not publicly listed", "n/a", "unknown", "tbd", "none"}
+    if a in sparse or b in sparse:
+        return False
+    return a != b
+
+
 def verify_and_flag_report(
     report: ResearchReport,
     verified_url_map: dict[str, str],
+    exclusions: list[str] | None = None,
+    url_content_map: dict[str, str] | None = None,
 ) -> tuple[ResearchReport, list[FlaggedRow], int]:
     """
-    Verify every row's source_url against URLs actually returned by Tavily in this run,
-    and identify messy/incomplete rows for visual highlighting in the frontend table.
+    Post-extraction grounding, domain-fallback, negative-exclusion, and SKU deduplication validator:
+      1. Drops any row matching negative exclusions.
+      2. Drops any row whose entity name (or normalized alias) does not appear in the snippet/content
+         of its cited source_url (when url_content_map is supplied).
+      3. Allows domain-fallback URL matching ONLY when the canonical entity name is explicitly confirmed
+         in retrieved text from that domain; otherwise drops the row.
+      4. Deduplicates overlapping rows sharing the same canonical entity/SKU unless pricing differs materially.
+      5. Allows clean 0-row abstention and 1-row outputs without padding.
     Returns (cleaned_report, flagged_rows, unverified_dropped_count).
     """
+    from app.guardrails import (
+        canonical_entity_key,
+        entity_grounded_in_text,
+        matches_excluded_entity,
+    )
+
+    if not report.items:
+        return report, [], 0
+
     domain_fallback: dict[str, str] = {}
-    for orig_url in verified_url_map.values():
+    domain_text_map: dict[str, list[str]] = {}
+    for norm_u, orig_url in verified_url_map.items():
         if is_safe_http_url(orig_url):
             host = urlparse(orig_url).netloc.lower().removeprefix("www.")
             domain_fallback.setdefault(host, orig_url)
+            if url_content_map and norm_u in url_content_map:
+                domain_text_map.setdefault(host, []).append(url_content_map[norm_u])
 
     verified_items: list[ResearchItem] = []
     item_flags: list[list[str]] = []
+    seen_entities: dict[str, list[str]] = {}  # canonical_key -> list of kept pricing_or_metrics
     unverified_dropped = 0
+    excl_list = exclusions or []
 
     for item in report.items:
+        if excl_list and matches_excluded_entity(item.name, excl_list):
+            unverified_dropped += 1
+            continue
+
         raw_url = str(item.source_url)
         if not is_safe_http_url(raw_url):
             unverified_dropped += 1
@@ -145,10 +184,21 @@ def verify_and_flag_report(
         else:
             norm = normalize_url(raw_url)
             if norm in verified_url_map and is_safe_http_url(verified_url_map[norm]):
+                if url_content_map is not None:
+                    cited_text = url_content_map.get(norm, "")
+                    if not entity_grounded_in_text(item.name, cited_text):
+                        unverified_dropped += 1
+                        continue
                 chosen_item = item.model_copy(update={"source_url": verified_url_map[norm]})
             else:
                 host = urlparse(raw_url).netloc.lower().removeprefix("www.")
                 if host in domain_fallback:
+                    # Only allow domain-fallback when entity name is explicitly confirmed in retrieved text from that domain
+                    if url_content_map is not None:
+                        dom_corpus = "\n".join(domain_text_map.get(host, []))
+                        if not entity_grounded_in_text(item.name, dom_corpus):
+                            unverified_dropped += 1
+                            continue
                     chosen_item = item.model_copy(update={"source_url": domain_fallback[host]})
                     reasons.append("Source URL matched by domain fallback — verify exact page")
                 else:
@@ -156,6 +206,17 @@ def verify_and_flag_report(
                     continue
 
         if chosen_item is not None:
+            canon_key = canonical_entity_key(chosen_item.name)
+            existing_pricings = seen_entities.get(canon_key, [])
+            if existing_pricings:
+                # Consolidate overlapping rows unless pricing/tier structure differs materially from every kept row
+                if not all(
+                    _has_materially_different_pricing(chosen_item.pricing_or_metrics, prev_p)
+                    for prev_p in existing_pricings
+                ):
+                    continue
+            seen_entities.setdefault(canon_key, []).append(chosen_item.pricing_or_metrics)
+
             pm_lower = chosen_item.pricing_or_metrics.strip().lower()
             if pm_lower in ("not publicly listed", "n/a", "unknown", "tbd", "none"):
                 reasons.append("Pricing or metrics not publicly listed")
@@ -165,27 +226,25 @@ def verify_and_flag_report(
             item_flags.append(reasons)
 
     if not verified_items:
-        # Never return an empty report if model produced valid items; keep and flag them for review
-        fallback_flags = [
-            FlaggedRow(
-                row_index=idx,
-                reasons=["Source URL could not be matched to a Tavily result — verify manually"],
-            )
-            for idx in range(len(report.items))
-        ]
-        return report, fallback_flags, unverified_dropped
+        abstention_summary = (
+            "No verified records strictly matched all criteria, grounding, and URL provenance checks for this request."
+        )
+        return (
+            report.model_copy(
+                update={
+                    "items": [],
+                    "executive_summary": report.executive_summary or abstention_summary,
+                }
+            ),
+            [],
+            unverified_dropped,
+        )
 
-    # Check for duplicate entity names across surviving rows
-    seen_names: dict[str, int] = {}
-    flagged_rows: list[FlaggedRow] = []
-    for idx, (item, reasons) in enumerate(zip(verified_items, item_flags)):
-        norm_name = " ".join(item.name.strip().lower().split())
-        if norm_name in seen_names:
-            reasons.append("Possible duplicate entity name")
-        else:
-            seen_names[norm_name] = idx
-        if reasons:
-            flagged_rows.append(FlaggedRow(row_index=idx, reasons=reasons))
+    flagged_rows: list[FlaggedRow] = [
+        FlaggedRow(row_index=idx, reasons=reasons)
+        for idx, reasons in enumerate(item_flags)
+        if reasons
+    ]
 
     return report.model_copy(update={"items": verified_items}), flagged_rows, unverified_dropped
 
@@ -298,4 +357,5 @@ class DeepResearchStatusResponse(BaseModel):
     elapsed_seconds: float
     error: str | None = None
     title: str | None = None
+    executive_summary: str | None = None
     filename: str | None = None

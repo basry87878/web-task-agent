@@ -9,7 +9,50 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.guardrails import is_safe_http_url, sanitize_excel_cell
-from app.schemas import REPORT_COLUMNS
+from app.schemas import REPORT_COLUMNS, ResearchItem, ResearchReport, report_to_rows
+
+
+def validate_export_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """
+    Enforce strict Pydantic ResearchItem validation before serializing .xlsx/.csv exports
+    so ungrounded or malformed rows never leak into downloadable files.
+    """
+    validated: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            item = ResearchItem.model_validate(
+                {
+                    "name": str(row.get("Name") or "").strip(),
+                    "category": str(row.get("Category") or "General").strip(),
+                    "key_details": str(row.get("Key Details") or "").strip(),
+                    "pricing_or_metrics": str(row.get("Pricing / Metrics") or "Not publicly listed").strip(),
+                    "notes": str(row.get("Notes") or "Verified source").strip(),
+                    "source_url": str(row.get("Source URL") or "").strip(),
+                }
+            )
+        except Exception:
+            continue
+        validated.append(
+            {
+                "Name": item.name.strip(),
+                "Category": item.category.strip(),
+                "Key Details": item.key_details.strip(),
+                "Pricing / Metrics": item.pricing_or_metrics.strip(),
+                "Notes": item.notes.strip(),
+                "Source URL": str(item.source_url),
+            }
+        )
+    return validated
+
+
+def export_report_to_excel_bytes(report: ResearchReport) -> bytes:
+    """Serialize a post-validated Pydantic ResearchReport directly to .xlsx bytes."""
+    return export_rows_to_excel_bytes(report.title, report.executive_summary, report_to_rows(report))
+
+
+def export_report_to_csv_bytes(report: ResearchReport) -> bytes:
+    """Serialize a post-validated Pydantic ResearchReport directly to .csv bytes."""
+    return export_rows_to_csv_bytes(report_to_rows(report))
 
 
 def make_safe_filename(title: str, ext: str = "xlsx") -> str:

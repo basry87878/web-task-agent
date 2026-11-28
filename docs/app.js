@@ -281,32 +281,45 @@ const API_BASE = "https://web-task-agent.onrender.com";
       "Source URL": "col-url",
     };
 
-    resultsTbody.innerHTML = report.rows
-      .map((row, rowIdx) => {
-        const reasons = flagMap.get(rowIdx);
-        const trClass = reasons ? ' class="row-flagged"' : "";
-        const cells = cols
-          .map((col, colIdx) => {
-            const val = row[col] || "";
-            const cls = colClass[col] ? ` class="${colClass[col]}"` : "";
-            if (col === "Source URL") {
-              if (isSafeHttpUrl(val)) {
-                return `<td${cls}><a class="source-link" href="${escapeHtml(val)}" target="_blank" rel="noopener noreferrer">Open source ↗</a></td>`;
+    if (!report.rows.length) {
+      resultsTbody.innerHTML = `
+        <tr>
+          <td colspan="${cols.length}" class="deep-preview-empty">
+            No verified records strictly matched all criteria for this request. See the summary above for details.
+          </td>
+        </tr>`;
+      downloadXlsxBtn.disabled = true;
+      downloadCsvBtn.disabled = true;
+      downloadXlsxBtn.textContent = "⬇️ No rows to export";
+    } else {
+      downloadXlsxBtn.disabled = false;
+      downloadCsvBtn.disabled = false;
+      resultsTbody.innerHTML = report.rows
+        .map((row, rowIdx) => {
+          const reasons = flagMap.get(rowIdx);
+          const trClass = reasons ? ' class="row-flagged"' : "";
+          const cells = cols
+            .map((col, colIdx) => {
+              const val = row[col] || "";
+              const cls = colClass[col] ? ` class="${colClass[col]}"` : "";
+              if (col === "Source URL") {
+                if (isSafeHttpUrl(val)) {
+                  return `<td${cls}><a class="source-link" href="${escapeHtml(val)}" target="_blank" rel="noopener noreferrer">Open source ↗</a></td>`;
+                }
+                return `<td${cls}>—</td>`;
               }
-              return `<td${cls}>—</td>`;
-            }
-            let extra = "";
-            if (colIdx === 0 && reasons && reasons.length) {
-              extra = `<div><span class="flag-pill" title="${escapeHtml(reasons.join("; "))}">Flagged: ${escapeHtml(reasons[0])}</span></div>`;
-            }
-            return `<td${cls}>${escapeHtml(val)}${extra}</td>`;
-          })
-          .join("");
-        return `<tr${trClass}>${cells}</tr>`;
-      })
-      .join("");
-
-    downloadXlsxBtn.textContent = `⬇️ Download Excel Report (${report.filename || "report.xlsx"})`;
+              let extra = "";
+              if (colIdx === 0 && reasons && reasons.length) {
+                extra = `<div><span class="flag-pill" title="${escapeHtml(reasons.join("; "))}">Flagged: ${escapeHtml(reasons[0])}</span></div>`;
+              }
+              return `<td${cls}>${escapeHtml(val)}${extra}</td>`;
+            })
+            .join("");
+          return `<tr${trClass}>${cells}</tr>`;
+        })
+        .join("");
+      downloadXlsxBtn.textContent = `⬇️ Download Excel Report (${report.filename || "report.xlsx"})`;
+    }
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -409,7 +422,8 @@ const API_BASE = "https://web-task-agent.onrender.com";
         format === "csv"
           ? (report.filename || "research_report.xlsx").replace(/\.xlsx$/i, ".csv")
           : report.filename || "research_report.xlsx";
-      const downloadName = match ? match[1] : fallbackName;
+      const rawName = match ? match[1] : fallbackName;
+      const downloadName = rawName.replace(/[^a-zA-Z0-9._-]/g, "_") || "research_report.xlsx";
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -531,7 +545,9 @@ const API_BASE = "https://web-task-agent.onrender.com";
     state.deepLastState = jobData;
     deepPanel.classList.remove("hidden");
 
-    const statusKey = (jobData.status || "planning").toLowerCase();
+    const allowedStatuses = new Set(["planning", "discovering", "extracting", "completed", "stopped", "error"]);
+    const rawStatus = (jobData.status || "planning").toLowerCase();
+    const statusKey = allowedStatuses.has(rawStatus) ? rawStatus : "planning";
     const isTerminal = ["completed", "stopped", "error"].includes(statusKey);
 
     deepStatusText.textContent = formatDeepStatusLabel(statusKey);
@@ -759,9 +775,10 @@ const API_BASE = "https://web-task-agent.onrender.com";
       const blob = await res.blob();
       const disp = res.headers.get("Content-Disposition") || "";
       const match = disp.match(/filename="?([^"]+)"?/i);
-      const downloadName = match
+      const rawName = match
         ? match[1]
         : `deep_research_${state.deepJobId}.${format}`;
+      const downloadName = rawName.replace(/[^a-zA-Z0-9._-]/g, "_") || `deep_research.${format}`;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

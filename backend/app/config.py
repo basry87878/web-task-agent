@@ -153,24 +153,21 @@ APP_DOMAIN = "https://www.jobtruth.top"
 LINKEDIN_URL = "https://www.linkedin.com/in/abdelrahmanbasry/"
 CONTACT_EMAIL = "a.basry404@gmail.com"
 
-# CORS allowlist for GitHub Pages + local dev servers
+# API hardening settings (body size limit, IP rate limit, docs disabled in production)
+MAX_REQUEST_BODY_BYTES = int(_get_env("MAX_REQUEST_BODY_BYTES", "262144") or "262144")  # 256 KB
+API_IP_RATE_LIMIT_PER_MINUTE = int(_get_env("API_IP_RATE_LIMIT_PER_MINUTE", "90") or "90")
+ENABLE_API_DOCS = (_get_env("ENABLE_API_DOCS", "false") or "false").lower() == "true"
+
+# CORS allowlist strictly locked down to JobTruth production domains
 DEFAULT_CORS_ORIGINS: list[str] = [
     "https://jobtruth.top",
     "https://www.jobtruth.top",
-    "http://localhost:5500",
-    "http://127.0.0.1:5500",
 ]
 
 
 def get_cors_origins() -> list[str]:
-    extra = _get_env("CORS_ALLOW_ORIGINS", "")
-    origins = list(DEFAULT_CORS_ORIGINS)
-    if extra:
-        for item in extra.split(","):
-            cleaned = item.strip().rstrip("/")
-            if cleaned and cleaned not in origins:
-                origins.append(cleaned)
-    return origins
+    """Strictly restrict CORS origins to JobTruth production domains only."""
+    return list(DEFAULT_CORS_ORIGINS)
 
 
 # 3 Built-in Business Presets (preserved verbatim from original JobTruth app)
